@@ -19,7 +19,7 @@ import { themeColorFromId, ThemeIcon } from '../../../../../base/common/themable
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { localize } from '../../../../../nls.js';
-import { AgentSession, AuthenticateParams, AuthenticateResult, CODEX_AGENT_PROVIDER_ID, type IAgentSessionChatMetadata, IAgentSessionMetadata, protectedResourcesRequireGitHubCopilotSignIn } from '../../../../../platform/agentHost/common/agent.js';
+import { AgentCanvasAvailability, AgentSession, AuthenticateParams, AuthenticateResult, CODEX_AGENT_PROVIDER_ID, type IAgentCanvas, type IAgentCanvasSnapshot, type IAgentSessionChatMetadata, IAgentSessionMetadata, protectedResourcesRequireGitHubCopilotSignIn } from '../../../../../platform/agentHost/common/agent.js';
 import { AgentMergeSessionOverrides, AgentMergeSessionState, readAgentMergeFolderState, readAgentMergeFolderStates } from '../../../../../platform/agentHost/common/agentMerge.js';
 import { readAgentSdkSetupInfos } from '../../../../../platform/agentHost/common/agentSdkSetup.js';
 import { IAgentConnection } from '../../../../../platform/agentHost/common/agentService.js';
@@ -44,7 +44,7 @@ import { readSessionSandboxPolicy, type ISessionSandboxPolicy } from '../../../.
 import { readSessionSandboxState } from '../../../../../platform/agentHost/common/meta/agentSandboxStateMeta.js';
 import type { IAgentSubscription } from '../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ResolveSessionConfigResult, type SessionConfigPropertySchema, type SessionConfigValueItem } from '../../../../../platform/agentHost/common/state/protocol/commands.js';
-import { AgentCustomization, CanvasAvailability as ProtocolCanvasAvailability, ChangesSummary, ChatInteractivity as ProtocolChatInteractivity, ChatOriginKind as ProtocolChatOriginKind, type CanvasInstance, type ChatOrigin, type ClientPluginCustomization, Customization, CustomizationEnablementKind, CustomizationType, type CustomizationEnablement, McpServerStatus, MessageKind, ModelSelection, SessionStatus as ProtocolSessionStatus, RootConfigState, RootState, type SessionActiveClient, SessionState, SessionSummary, type Changeset } from '../../../../../platform/agentHost/common/state/protocol/state.js';
+import { AgentCustomization, ChangesSummary, ChatInteractivity as ProtocolChatInteractivity, ChatOriginKind as ProtocolChatOriginKind, type ChatOrigin, type ClientPluginCustomization, Customization, CustomizationEnablementKind, CustomizationType, type CustomizationEnablement, McpServerStatus, MessageKind, ModelSelection, SessionStatus as ProtocolSessionStatus, RootConfigState, RootState, type SessionActiveClient, SessionState, SessionSummary, type Changeset } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 import { isActionKnownToVersion } from '../../../../../platform/agentHost/common/state/protocol/version/registry.js';
 import { ActionType, isChatAction, isSessionAction, NotificationType, type SessionSummaryChanges } from '../../../../../platform/agentHost/common/state/sessionActions.js';
 import { AgentCapabilities, AgentInfo, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, DEFAULT_CHAT_ID, getSessionChatResource, getSessionRelatedPullRequestUrls, isDefaultChatUri, isSessionStatusArchived, isSessionStatusRead, parseChatUri, readSessionCreationReference, readSessionEhcliAdoptable, readFolderGitHubState, readFolderScopeGitState, readSessionExternal, parseSessionGitHubData, readSessionGitHubData, readSessionGitState, readWorkingDirectoryKey, readWorkingDirectoryKeys, readWorkingDirectoryScopeId, readWorkingDirectoryScopeIds, withMigratedSessionGitHubState, withSessionGitHubData, readSessionMultiRootMetadata, readSessionSourceControlState, readSessionWorkspaceless, ROOT_STATE_URI, SESSION_META_MULTI_ROOT_KEY, SessionMeta, SessionSourceControlOutcome, StateComponents, withSessionCreationReference, withSessionExternal, withSessionMultiRootMetadata, withSessionStatusFlag, withSessionWorkspaceless, withWorkingDirectoryKey, withWorkingDirectoryScopeId, type ChatState, type ChatSummary, type ISessionCreationReference as IProtocolSessionCreationReference, type ISessionGitHubState, type ISessionGitState, type ISessionMultiRootMetadata } from '../../../../../platform/agentHost/common/state/sessionState.js';
@@ -780,6 +780,8 @@ export interface IAgentHostAdapterOptions {
 	readonly getBackendChatResource?: (chat: URI) => URI | undefined;
 	/** Agent capability lookup shared by every adapter owned by this provider. */
 	readonly agentCapabilities: IObservable<ReadonlyMap<string, AgentCapabilities | undefined> | undefined>;
+	/** Live canvas snapshots published through the local VS Code Agent Host extension contract. */
+	readonly canvasSnapshots?: IObservable<ReadonlyMap<string, readonly IAgentCanvas[]>>;
 	/**
 	 * The scheme the host addresses this session under, when it differs from the agent provider
 	 * (cloud sandbox: provider `copilot`, sessions `ahp-session:/<id>`). Defaults to the provider.
@@ -893,7 +895,7 @@ class AgentHostSessionCanvas implements ISessionCanvas {
 
 	constructor(
 		private readonly _chat: URI,
-		canvas: CanvasInstance,
+		canvas: IAgentCanvas,
 		private readonly _getConnection: () => IAgentConnection | undefined,
 	) {
 		this.resource = URI.from({
@@ -904,7 +906,7 @@ class AgentHostSessionCanvas implements ISessionCanvas {
 		this.title = canvas.title ?? canvas.extensionName ?? canvas.canvasId;
 		this.status = canvas.status;
 		this.revision = canvas.revision;
-		this.availability = canvas.availability === ProtocolCanvasAvailability.Ready
+		this.availability = canvas.availability === AgentCanvasAvailability.Ready
 			? SessionCanvasAvailability.Ready
 			: SessionCanvasAvailability.Unavailable;
 	}
@@ -914,8 +916,11 @@ class AgentHostSessionCanvas implements ISessionCanvas {
 		if (!connection) {
 			throw new Error(localize('agentHostCanvas.disconnected', "The canvas runtime is disconnected."));
 		}
-		const result = await connection.resolveCanvasSource(this._chat, this.instanceId, this.revision);
-		const source = URI.parse(result.url, true);
+		const canvases = connection.canvases;
+		if (!canvases) {
+			throw new Error(localize('agentHostCanvas.unavailable', "The canvas runtime is unavailable."));
+		}
+		const source = URI.parse(await canvases.resolveSource(this._chat, this.instanceId, this.revision), true);
 		if (source.scheme !== Schemas.http && source.scheme !== Schemas.https) {
 			throw new Error(localize('agentHostCanvas.invalidSource', "The canvas returned an unsupported source."));
 		}
@@ -1539,10 +1544,11 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 			const agentCapabilities = this._options.agentCapabilities.read(reader)?.get(this.agentProvider);
 			this._options.connectionStatus?.read(reader);
 			const connection = this._options.getConnection();
+			connection?.initializeResult.read(reader);
 			return {
 				supportsRemoveArtifacts: !!connection?.removeSessionArtifact && supportsAgentHostArtifactRemoval(connection.initializeResult.read(reader)),
 				supportsImport: this.isExternal.read(reader) && !!connection?.importSession && supportsAgentHostSessionImport(connection.initializeResult.read(reader)),
-				supportsCanvases: this.providerId === LOCAL_AGENT_HOST_PROVIDER_ID && agentCapabilities?.canvases !== undefined,
+				supportsCanvases: this.providerId === LOCAL_AGENT_HOST_PROVIDER_ID && this.agentProvider === CopilotCLISessionType.id && connection?.canvases !== undefined,
 				supportsMultipleChats: !this.isQuickChat.read(reader) && (agentCapabilities?.multipleChats !== undefined),
 				supportsFork: agentCapabilities?.multipleChats?.fork ?? false,
 				supportsSideChat: agentCapabilities?.multipleChats?.sideChat ?? false,
@@ -2434,19 +2440,10 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 
 	private _createChatCanvasesObservable(chatUriOrObservable: URI | IObservable<URI | undefined>): IObservable<readonly ISessionCanvas[]> {
 		const chatUriObs = URI.isUri(chatUriOrObservable) ? constObservable(chatUriOrObservable) : chatUriOrObservable;
-		const chatStateObs = createActiveSessionSubscriptionObs<ChatState>(
-			this._options,
-			this.isActiveSessionObs,
-			StateComponents.Chat,
-			chatUriObs,
-		);
-		const canvases = derivedOpts<readonly CanvasInstance[]>({ equalsFn: structuralEquals }, reader => {
-			const chatState = chatStateObs.read(reader).read(reader);
-			return !chatState || chatState instanceof Error ? [] : chatState.canvases ?? [];
-		});
 		return derived(reader => {
 			const chatUri = chatUriObs.read(reader);
-			return chatUri ? canvases.read(reader).map(canvas => new AgentHostSessionCanvas(chatUri, canvas, this._options.getConnection)) : [];
+			const canvases = chatUri ? this._options.canvasSnapshots?.read(reader).get(chatUri.toString()) ?? [] : [];
+			return chatUri ? canvases.map(canvas => new AgentHostSessionCanvas(chatUri, canvas, this._options.getConnection)) : [];
 		});
 	}
 
@@ -3533,6 +3530,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	 */
 	protected readonly _sessionStateSubscriptions = this._register(new DisposableMap<string, DisposableStore>());
 	protected readonly _connectionChanged = observableSignal(this);
+	private readonly _canvasSnapshots = observableValue<ReadonlyMap<string, readonly IAgentCanvas[]>>(this, new Map());
 	private readonly _chatCatalogLoading = new Map<string, ISettableObservable<boolean>>();
 	private readonly _agentMergeSessionStateSubscriptions = this._register(new DisposableMap<string, DisposableStore>());
 	private readonly _agentMergeSessionStateIdleTimers = this._register(new DisposableMap<string, IDisposable>());
@@ -3753,6 +3751,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			},
 			getBackendChatResource: chat => this.getBackendChatResource(chat),
 			agentCapabilities: this._agentCapabilities,
+			canvasSnapshots: this._canvasSnapshots,
 			backendSessionScheme: this._backendSessionScheme(provider),
 			mapBackendSessionResource: resource => this._mapBackendSessionResource(resource),
 			connectionStatus: this.remoteConnectionStatus,
@@ -4305,6 +4304,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				},
 				getBackendChatResource: chat => this.getBackendChatResource(chat),
 				agentCapabilities: this._agentCapabilities,
+				canvasSnapshots: this._canvasSnapshots,
 				mapBackendSessionResource: resource => this._mapBackendSessionResource(resource),
 				connectionStatus: this.remoteConnectionStatus,
 				...this._adapterOptions(),
@@ -7122,6 +7122,26 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 
 	// -- AHP notification / action handlers ----------------------------------
 
+	private _replaceCanvasSnapshots(snapshots: readonly IAgentCanvasSnapshot[]): void {
+		const next = new Map<string, readonly IAgentCanvas[]>();
+		for (const snapshot of snapshots) {
+			if (snapshot.canvases.length > 0) {
+				next.set(snapshot.chat.toString(), snapshot.canvases);
+			}
+		}
+		this._canvasSnapshots.set(next, undefined);
+	}
+
+	private _updateCanvasSnapshot(chat: URI, canvases: readonly IAgentCanvas[]): void {
+		const next = new Map(this._canvasSnapshots.get());
+		if (canvases.length > 0) {
+			next.set(chat.toString(), canvases);
+		} else {
+			next.delete(chat.toString());
+		}
+		this._canvasSnapshots.set(next, undefined);
+	}
+
 	/**
 	 * Wire AHP notification and action listeners on the given connection.
 	 * Subclasses call this from their constructor (local) or `setConnection`
@@ -7132,6 +7152,13 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			this._sessionStateIdleTimers.deleteAndDispose(sessionId);
 			this._sessionStateSubscriptions.deleteAndDispose(sessionId);
 			this._ensureSessionStateSubscription(sessionId);
+		}
+
+		const canvasConnection = connection.canvases;
+		this._replaceCanvasSnapshots(canvasConnection?.getSnapshots() ?? []);
+		store.add(toDisposable(() => this._replaceCanvasSnapshots([])));
+		if (canvasConnection) {
+			store.add(canvasConnection.onDidChange(snapshot => this._updateCanvasSnapshot(snapshot.chat, snapshot.canvases)));
 		}
 
 		store.add(connection.onDidNotification(n => {

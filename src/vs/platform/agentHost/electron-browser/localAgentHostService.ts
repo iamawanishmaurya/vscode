@@ -45,6 +45,7 @@ import {
 	IAgentCreateSessionConfig,
 	IAgentHostInspectInfo,
 	type IAgentHostDebugLogsArtifact,
+	type IAgentHostCanvases,
 	IAgentHostManagementService,
 	IAgentHostManagedSettingsDiagnostics,
 	IAgentHostNetworkDiagnosticsInfo,
@@ -62,7 +63,7 @@ import {
 } from '../common/agentService.js';
 import type { IRemoteWatchHandle } from '../common/agentHostFileSystemProvider.js';
 import type { IActiveSubscriptionInfo, IAgentSubscription } from '../common/state/agentSubscription.js';
-import type { CompletionsParams, CompletionsResult, ContentEncoding, CreateTerminalParams, ResolveCanvasSourceResult, ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
+import type { CompletionsParams, CompletionsResult, ContentEncoding, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
 import type { Implementation, InitializeResult } from '../common/state/protocol/common/commands.js';
 import { NonReconnectableTransportError } from '../common/state/sessionTransport.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
@@ -148,6 +149,7 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 
 	readonly clientId = generateUuid();
 	get resourceUris() { return this._protocolClient?.resourceUris ?? identityAgentHostResourceUriMapper; }
+	get canvases(): IAgentHostCanvases | undefined { return this._protocolClient?.canvases; }
 
 	private readonly _clientStore = this._register(new MutableDisposable<DisposableStore>());
 	private readonly _managementConnection = this._register(new LocalAgentHostManagementConnection());
@@ -510,10 +512,6 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 
 	disposeChat(chat: URI): Promise<void> {
 		return this._requireClient().disposeChat(chat);
-	}
-
-	resolveCanvasSource(chat: URI, instanceId: string, revision: number): Promise<ResolveCanvasSourceResult> {
-		return this._requireClient().resolveCanvasSource(chat, instanceId, revision);
 	}
 
 	createTerminal(params: CreateTerminalParams): Promise<void> {

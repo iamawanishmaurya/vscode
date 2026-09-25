@@ -21,14 +21,14 @@ import type { IAgentHostClientTelemetryContext } from './agentHostTelemetry.js';
 import type { IAgentHostFirstResponseDiagnostic } from './otel/agentHostTiming.js';
 import type { IChatUserInteractionTiming } from '../../otel/common/chatUserInteraction.js';
 import type { IDevContainerAgentHostMainService } from './devContainerAgentHost.js';
-import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveCanvasSourceParams, ResolveCanvasSourceResult, ResolveSessionConfigResult, SessionConfigCompletionsResult } from './state/protocol/commands.js';
+import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult } from './state/protocol/commands.js';
 import type { AutomationCapabilities, InitializeResult } from './state/protocol/common/commands.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from './state/protocol/channels-changeset/commands.js';
 import type { FetchAutomationRunsParams, FetchAutomationRunsResult, ListAutomationTriggerDefinitionsParams, ListAutomationTriggerDefinitionsResult, RunAutomationParams, RunAutomationResult } from './state/protocol/channels-automation/commands.js';
 import type { ActionEnvelope, ClientAutomationAction, ClientAutomationRunAction, INotification, IRootConfigChangedAction, SessionAction, ChatAction, TerminalAction, ClientAnnotationsAction, ClientChangesetAction } from './state/sessionActions.js';
 import type { ContentEncoding, ResourceCopyParams, ResourceCopyResult, ResourceDeleteParams, ResourceDeleteResult, ResourceListResult, ResourceMkdirParams, ResourceMkdirResult, ResourceMoveParams, ResourceMoveResult, ResourceReadResult, ResourceResolveParams, ResourceResolveResult, ResourceWatchState, ResourceWriteParams, ResourceWriteResult, CreateResourceWatchParams, CreateResourceWatchResult, IStateSnapshot } from './state/sessionProtocol.js';
 import { ComponentToState, StateComponents, type RootState } from './state/sessionState.js';
-import { type AgentProvider, CLAUDE_AGENT_PROVIDER_ID, CODEX_AGENT_PROVIDER_ID, type AuthenticateParams, type AuthenticateResult, type IAgentCreateChatRequestOptions, type IAgentCreateSessionConfig, type IAgentSessionMetadata, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IMcpNotification, type IAgentHostNetworkEndpoint, type IAgentHostManagedSettingsSnapshot } from './agent.js';
+import { type AgentProvider, CLAUDE_AGENT_PROVIDER_ID, CODEX_AGENT_PROVIDER_ID, type AuthenticateParams, type AuthenticateResult, type IAgentCanvasSnapshot, type IAgentCreateChatRequestOptions, type IAgentCreateSessionConfig, type IAgentSessionMetadata, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IMcpNotification, type IAgentHostNetworkEndpoint, type IAgentHostManagedSettingsSnapshot } from './agent.js';
 
 // ---- Provider-model re-exports (compatibility) ------------------------------
 // New provider code imports these from agent.ts.
@@ -827,7 +827,7 @@ export interface IAgentService {
 	disposeChat(session: URI, chat: URI): Promise<void>;
 
 	/** Resolve the current source of a live canvas owned by a chat. */
-	resolveCanvasSource(params: ResolveCanvasSourceParams): Promise<ResolveCanvasSourceResult>;
+	resolveCanvasSource(chat: URI, instanceId: string, revision: number): Promise<string>;
 
 	/** Resolve the dynamic configuration schema for creating a session. */
 	resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult>;
@@ -899,6 +899,9 @@ export interface IAgentService {
 	 * so no per-subscription fanout is required).
 	 */
 	readonly onMcpNotification: Event<IMcpNotification>;
+
+	/** Full-replacement live canvas snapshots aggregated across capable providers. */
+	readonly onDidChangeCanvases: Event<IAgentCanvasSnapshot>;
 
 	/** Gracefully shut down all sessions and the underlying client. */
 	shutdown(): Promise<void>;
@@ -1057,6 +1060,8 @@ export interface IAgentConnection {
 
 	/** Available for capable hosts, including while reconnecting; absent after permanent disconnection. */
 	readonly devContainerService?: IDevContainerAgentHostMainService;
+	/** Available only for the local VS Code canvas extension contract. */
+	readonly canvases?: IAgentHostCanvases;
 
 	readonly clientId: string;
 	readonly resourceUris: IAgentHostResourceUriMapper;
@@ -1199,8 +1204,6 @@ export interface IAgentConnection {
 	createChat(session: URI, chat: URI, options?: IAgentCreateChatRequestOptions): Promise<void>;
 	/** Dispose an additional chat created via {@link createChat}. */
 	disposeChat(chat: URI): Promise<void>;
-	/** Resolve the current source of a live canvas owned by a chat. */
-	resolveCanvasSource(chat: URI, instanceId: string, revision: number): Promise<ResolveCanvasSourceResult>;
 
 	// ---- Terminal lifecycle -------------------------------------------------
 	createTerminal(params: CreateTerminalParams): Promise<void>;
@@ -1228,6 +1231,13 @@ export interface IAgentConnection {
 	 * returned handle unsubscribes.
 	 */
 	watchResource(params: CreateResourceWatchParams): Promise<IRemoteWatchHandle>;
+}
+
+/** Client projection of the local VS Code canvas extension contract. */
+export interface IAgentHostCanvases {
+	readonly onDidChange: Event<IAgentCanvasSnapshot>;
+	getSnapshots(): readonly IAgentCanvasSnapshot[];
+	resolveSource(chat: URI, instanceId: string, revision: number): Promise<string>;
 }
 
 export const IAgentHostService = createDecorator<IAgentHostService>('agentHostService');

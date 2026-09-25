@@ -2618,7 +2618,7 @@ suite('CopilotAgent', () => {
 					provider: 'copilotcli',
 					displayName: 'Copilot',
 					description: 'Copilot SDK agent running in the local agent host process',
-					capabilities: { canvases: {}, multipleChats: { fork: true, sideChat: true } },
+					capabilities: { multipleChats: { fork: true, sideChat: true } },
 				},
 				agentHostCapabilities: { workspaceConversion: true },
 			});

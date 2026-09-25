@@ -16,10 +16,11 @@ import { join } from '../../../../../base/common/path.js';
 import { isWindows } from '../../../../../base/common/platform.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ActionType, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction, type ChatTurnStartedAction } from '../../../common/state/sessionActions.js';
+import { AgentHostCanvasesChangedNotification, ResolveAgentHostCanvasSourceExtensionMethod, type IAgentHostCanvasesChangedParams, type IAgentHostExtensionCommandMap } from '../../../common/agentHostExtensionProtocol.js';
+import { AgentHostClientConnectionKind } from '../../../common/agentHostTelemetry.js';
 import { PROTOCOL_VERSION } from '../../../common/state/protocol/version/registry.js';
 import { buildDefaultChatUri, MessageKind, PendingMessageKind, ResponsePartKind, ROOT_STATE_URI, SessionStatus, ToolCallContributorKind, ToolResultContentType, type ISessionWithDefaultChat, type ToolDefinition } from '../../../common/state/sessionState.js';
 import { ToolCallConfirmationReason } from '../../../common/state/protocol/channels-chat/state.js';
-import type { ResolveCanvasSourceResult } from '../../../common/state/protocol/channels-chat/commands.js';
 import { SessionConfigKey } from '../../../common/sessionConfigKeys.js';
 import { AgentHostSessionReleaseRetryMsEnvVar, AgentHostSessionResidencyLimitEnvVar } from '../../../common/agentService.js';
 import { createProviderSession, dispatchTurn, type IAgentHostProviderTestConfig } from '../providerIntegrationTestHelpers.js';
@@ -32,6 +33,7 @@ const COPILOT_CONFIG: IAgentHostProviderTestConfig = {
 };
 const CANVAS_COPILOT_CONFIG: IAgentHostProviderTestConfig = {
 	...COPILOT_CONFIG,
+	clientMeta: { 'vscode.clientConnectionKind': AgentHostClientConnectionKind.Local },
 	sessionConfig: { [SessionConfigKey.AutoApprove]: 'autoApprove' },
 };
 
@@ -211,17 +213,16 @@ session = await joinSession({
 		);
 		void (getActionEnvelope(startNotification).action as ChatToolCallStartAction);
 		const canvasNotification = await client.waitForNotification(n => {
-			if (!isActionNotification(n, ActionType.ChatCanvasesChanged)) {
+			if ((n as { method: string }).method !== AgentHostCanvasesChangedNotification) {
 				return false;
 			}
-			const action = getActionEnvelope(n).action as { canvases?: readonly unknown[] };
-			return (action.canvases?.length ?? 0) > 0;
+			return (n as unknown as { params: IAgentHostCanvasesChangedParams }).params.canvases.length > 0;
 		}, 90_000);
-		const canvasAction = getActionEnvelope(canvasNotification).action as { canvases?: readonly { instanceId: string; revision: number; availability: string }[] };
-		const canvas = canvasAction.canvases?.[0];
+		const canvasSnapshot = (canvasNotification as unknown as { params: IAgentHostCanvasesChangedParams }).params;
+		const canvas = canvasSnapshot.canvases[0];
 		assert.ok(canvas);
-		const source = await client.call<ResolveCanvasSourceResult>('resolveCanvasSource', {
-			channel: buildDefaultChatUri(sessionUri),
+		const source = await client.call<IAgentHostExtensionCommandMap[typeof ResolveAgentHostCanvasSourceExtensionMethod]['result']>(ResolveAgentHostCanvasSourceExtensionMethod, {
+			chat: buildDefaultChatUri(sessionUri),
 			instanceId: canvas.instanceId,
 			revision: canvas.revision,
 		});

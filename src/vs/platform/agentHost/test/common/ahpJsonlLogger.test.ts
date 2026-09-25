@@ -12,6 +12,7 @@ import { IFileWriteOptions } from '../../../files/common/files.js';
 import { InMemoryFileSystemProvider } from '../../../files/common/inMemoryFilesystemProvider.js';
 import { NullLogService } from '../../../log/common/log.js';
 import { AhpJsonlLogger, getAhpLogByteLength, isAhpLogFileFor, stringifyAhpLogEntry } from '../../common/ahpJsonlLogger.js';
+import { ResolveAgentHostCanvasSourceExtensionMethod } from '../../common/agentHostExtensionProtocol.js';
 
 suite('AhpJsonlLogger', () => {
 
@@ -195,7 +196,7 @@ suite('AhpJsonlLogger', () => {
 			new NullLogService(),
 		));
 
-		logger.log({ jsonrpc: '2.0', id: 7, method: 'resolveCanvasSource', params: { channel: 'ahp-chat:/session/main', instanceId: 'preview', revision: 1 } }, 'c2s');
+		logger.log({ jsonrpc: '2.0', id: 7, method: ResolveAgentHostCanvasSourceExtensionMethod, params: { chat: 'ahp-chat:/session/main', instanceId: 'preview', revision: 1 } }, 'c2s');
 		logger.log({ jsonrpc: '2.0', id: 8, result: { url: 'https://visible.example/path' } }, 's2c');
 		logger.log({ jsonrpc: '2.0', id: 7, result: { url: 'https://secret.example/path?token=sensitive' } }, 's2c');
 		await logger.flush();
@@ -218,7 +219,7 @@ suite('AhpJsonlLogger', () => {
 		));
 
 		for (let id = 0; id < 1025; id++) {
-			logger.log({ jsonrpc: '2.0', id, method: 'resolveCanvasSource', params: { channel: 'ahp-chat:/session/main', instanceId: `preview-${id}`, revision: 1 } }, 'c2s');
+			logger.log({ jsonrpc: '2.0', id, method: ResolveAgentHostCanvasSourceExtensionMethod, params: { chat: 'ahp-chat:/session/main', instanceId: `preview-${id}`, revision: 1 } }, 'c2s');
 		}
 		logger.log({ jsonrpc: '2.0', id: 0, result: { url: 'https://secret.example/oldest' } }, 's2c');
 		logger.log({ jsonrpc: '2.0', id: 1024, result: { url: 'https://secret.example/overflow' } }, 's2c');

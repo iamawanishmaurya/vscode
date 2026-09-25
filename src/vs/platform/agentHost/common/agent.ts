@@ -15,7 +15,7 @@ import { URI } from '../../../base/common/uri.js';
 import type { IAgentServerToolHost } from './agentServerTools.js';
 import type { AgentHostClientType } from './agentHostClientInfo.js';
 import type { IAgentHostClientTelemetryContext, IAgentProviderTurnTelemetryContext } from './agentHostTelemetry.js';
-import type { ResolveCanvasSourceResult, ResolveSessionConfigResult, SessionConfigCompletionsResult } from './state/protocol/commands.js';
+import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from './state/protocol/commands.js';
 import { ProtectedResourceMetadata, type Changeset, type ChatInteractivity, type ChatOrigin, type ConfigSchema, type MessageAttachment, type ModelSelection, type AgentSelection, type SessionActiveClient, type ToolCallPendingConfirmationState, type ToolDefinition, ChangesSummary } from './state/protocol/state.js';
 import type { ActionOrigin, AuthRequiredParams, SessionAction, ChatAction } from './state/sessionActions.js';
 import { ChatInputResponseKind, ChatOriginKind, SessionStatus, buildSubagentChatUri, parseRequiredSessionUriFromChatUri, type AgentCapabilities, type ClientPluginCustomization, type Customization, type ErrorInfo, type ISessionFolderPickerDecision, type Message, type PendingMessage, type ChatInputAnswer, type SessionMeta, type ToolCallResult, type Turn, type PolicyState } from './state/sessionState.js';
@@ -682,6 +682,31 @@ export interface IAgentChatDataChange {
 	readonly providerData: string;
 }
 
+export const AgentCanvasAvailability = {
+	Ready: 'ready',
+	Unavailable: 'unavailable',
+} as const;
+
+export type AgentCanvasAvailability = typeof AgentCanvasAvailability[keyof typeof AgentCanvasAvailability];
+
+/** A live model-opened canvas projected by an agent provider. */
+export interface IAgentCanvas {
+	readonly instanceId: string;
+	readonly extensionId: string;
+	readonly extensionName?: string;
+	readonly canvasId: string;
+	readonly title?: string;
+	readonly status?: string;
+	readonly revision: number;
+	readonly availability: AgentCanvasAvailability;
+}
+
+/** Full replacement of the live canvas collection for one exact chat. */
+export interface IAgentCanvasSnapshot {
+	readonly chat: URI;
+	readonly canvases: readonly IAgentCanvas[];
+}
+
 /** A legacy concrete chat backing enumerated by {@link IAgent.listLegacyChatBackings} for migration. */
 export interface IAgentLegacyChat {
 	/** The concrete chat's channel URI (see {@link buildChatUri}). */
@@ -842,7 +867,7 @@ export interface IAgentChats {
 	getMessages(chat: URI, context: AgentChatOperationContext): Promise<readonly Turn[]>;
 
 	/** Resolve the current source of a live model-opened canvas. */
-	resolveCanvasSource?(chat: URI, instanceId: string, revision: number, context: AgentChatOperationContext): Promise<ResolveCanvasSourceResult>;
+	resolveCanvasSource?(chat: URI, instanceId: string, revision: number, context: AgentChatOperationContext): Promise<string>;
 }
 
 export interface IAgentResolveChatConfigParams {
@@ -1250,6 +1275,9 @@ export interface IAgent {
 
 	/** Fires when an opaque chat backing changes and must be persisted again. */
 	readonly onDidChangeChatData: Event<IAgentChatDataChange>;
+
+	/** Full-replacement live canvas snapshots for exact chats owned by this provider. */
+	readonly onDidChangeCanvases?: Event<IAgentCanvasSnapshot>;
 
 	/** Fires when the provider creates a chat, such as a delegated subagent. */
 	readonly onDidSpawnChat: Event<IAgentSpawnChatEvent>;

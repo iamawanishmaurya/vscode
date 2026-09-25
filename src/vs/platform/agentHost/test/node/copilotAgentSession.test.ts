@@ -32,7 +32,7 @@ import type { ClassifiedEvent, IGDPRProperty, OmitMetadata, StrictPropertyCheck 
 import { ITelemetryService, TelemetryLevel } from '../../../telemetry/common/telemetry.js';
 import { NullTelemetryServiceShape } from '../../../telemetry/common/telemetryUtils.js';
 import { getTelemetryChatSessionId } from '../../common/agentTelemetryCorrelation.js';
-import { AgentSession, SubagentChatSignal, type AgentSignal, type IAgentActionSignal, type IAgentTelemetryContext, type IAgentToolPendingConfirmationSignal } from '../../common/agent.js';
+import { AgentSession, SubagentChatSignal, type AgentSignal, type IAgentActionSignal, type IAgentCanvasSnapshot, type IAgentTelemetryContext, type IAgentToolPendingConfirmationSignal } from '../../common/agent.js';
 import { AgentHostClientType } from '../../common/agentHostClientInfo.js';
 import { AgentHostClientConnectionKind, AgentHostLaunchKind, AgentHostTransportKind, createUnknownAgentHostClientTelemetryContext } from '../../common/agentHostTelemetry.js';
 import type { ChatInputRequestWithPlanReview } from '../../common/agentHostPlanReview.js';
@@ -1006,6 +1006,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	runtime: TestCopilotSessionRuntime;
 	mockSession: MockCopilotSession;
 	signals: AgentSignal[];
+	canvasSnapshots: IAgentCanvasSnapshot[];
 	waitForSignal: (predicate: (signal: AgentSignal) => boolean) => Promise<AgentSignal>;
 	terminalManager: TestAgentHostTerminalManager;
 	storedFileContents: ReadonlyMap<string, string>;
@@ -1020,7 +1021,9 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	dispatchSessionAction: (action: StateAction) => void;
 }> {
 	const progressEmitter = disposables.add(new Emitter<AgentSignal>());
+	const canvasEmitter = disposables.add(new Emitter<IAgentCanvasSnapshot>());
 	const signals: AgentSignal[] = [];
+	const canvasSnapshots: IAgentCanvasSnapshot[] = [];
 	const waiters: { predicate: (signal: AgentSignal) => boolean; deferred: DeferredPromise<AgentSignal> }[] = [];
 
 	disposables.add(progressEmitter.event(signal => {
@@ -1033,6 +1036,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 			}
 		}
 	}));
+	disposables.add(canvasEmitter.event(snapshot => canvasSnapshots.push(snapshot)));
 
 	const waitForSignal = (predicate: (signal: AgentSignal) => boolean): Promise<AgentSignal> => {
 		const existing = signals.find(predicate);
@@ -1285,6 +1289,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 			chatChannelUri,
 			rawSessionId: 'test-session-1',
 			onDidSessionProgress: progressEmitter,
+			onDidChangeCanvases: canvasEmitter,
 			sessionLauncher,
 			launchPlan,
 			shellManager: options?.shellManager,
@@ -1324,6 +1329,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 		runtime,
 		mockSession,
 		signals,
+		canvasSnapshots,
 		waitForSignal,
 		terminalManager,
 		storedFileContents,
@@ -1954,7 +1960,7 @@ suite('CopilotAgentSession', () => {
 	});
 
 	test('projects only live canvas events after resume and fences source revisions', async () => {
-		const { session, mockSession, signals } = await createAgentSession(disposables, {
+		const { session, mockSession, canvasSnapshots } = await createAgentSession(disposables, {
 			resume: true,
 			configureMockSession: mock => {
 				mock.openCanvases.push({
@@ -2002,12 +2008,15 @@ suite('CopilotAgentSession', () => {
 
 		assert.deepStrictEqual({
 			source,
-			actions: getActions(signals).filter(action => action.type === ActionType.ChatCanvasesChanged),
+			snapshots: canvasSnapshots.map(snapshot => ({
+				chat: snapshot.chat.toString(),
+				canvases: snapshot.canvases,
+			})),
 		}, {
 			source: 'https://example.test/live',
-			actions: [
+			snapshots: [
 				{
-					type: ActionType.ChatCanvasesChanged,
+					chat: buildDefaultChatUri(AgentSession.uri('copilot', 'test-session-1')),
 					canvases: [{
 						instanceId: 'preview',
 						extensionId: 'project:preview',
@@ -2020,7 +2029,7 @@ suite('CopilotAgentSession', () => {
 					}],
 				},
 				{
-					type: ActionType.ChatCanvasesChanged,
+					chat: buildDefaultChatUri(AgentSession.uri('copilot', 'test-session-1')),
 					canvases: [{
 						instanceId: 'preview',
 						extensionId: 'project:preview',
@@ -2032,13 +2041,16 @@ suite('CopilotAgentSession', () => {
 						availability: 'unavailable',
 					}],
 				},
-				{ type: ActionType.ChatCanvasesChanged, canvases: undefined },
+				{
+					chat: buildDefaultChatUri(AgentSession.uri('copilot', 'test-session-1')),
+					canvases: [],
+				},
 			],
 		});
 	});
 
 	test('bounds the live canvas projection and evicts the oldest instance', async () => {
-		const { session, mockSession, signals } = await createAgentSession(disposables);
+		const { session, mockSession, canvasSnapshots } = await createAgentSession(disposables);
 		for (let index = 0; index < 9; index++) {
 			mockSession.fire('session.canvas.opened', {
 				instanceId: `canvas-${index}`,
@@ -2048,8 +2060,7 @@ suite('CopilotAgentSession', () => {
 			});
 		}
 
-		const actions = getActions(signals).filter(action => action.type === ActionType.ChatCanvasesChanged);
-		const finalCanvases = actions.at(-1)?.canvases;
+		const finalCanvases = canvasSnapshots.at(-1)?.canvases;
 		assert.throws(() => session.resolveCanvasSource('canvas-0', 1), /not available/);
 		assert.deepStrictEqual({
 			instanceIds: finalCanvases?.map(canvas => canvas.instanceId),

@@ -11,6 +11,7 @@ import { joinPath } from '../../../base/common/resources.js';
 import { isUriComponents, URI, UriComponents } from '../../../base/common/uri.js';
 import { IFileService, IFileStatWithMetadata } from '../../files/common/files.js';
 import { ILogService } from '../../log/common/log.js';
+import { ResolveAgentHostCanvasSourceExtensionMethod } from './agentHostExtensionProtocol.js';
 
 export type AhpLogDirection = 'c2s' | 's2c';
 
@@ -56,7 +57,6 @@ const MAX_LOG_LINE_LENGTH = 1024 * 1024;
 // When trimming an oversized entry, individual string values are capped to this
 // length. Generous enough to keep messages useful for debugging.
 const MAX_LOGGED_STRING_LENGTH = 16 * 1024;
-const RESOLVE_CANVAS_SOURCE_METHOD = 'resolveCanvasSource';
 const REDACTED_CANVAS_SOURCE = '<redacted canvas source>';
 const MAX_TRACKED_CANVAS_SOURCE_REQUESTS = 1024;
 
@@ -133,7 +133,7 @@ export class AhpJsonlLogger extends Disposable {
 		if (!isRecord(message)) {
 			return message;
 		}
-		if (dir === 'c2s' && message.method === RESOLVE_CANVAS_SOURCE_METHOD && isJsonRpcId(message.id)) {
+		if (dir === 'c2s' && message.method === ResolveAgentHostCanvasSourceExtensionMethod && isJsonRpcId(message.id)) {
 			if (!this._canvasSourceRequestIds.has(message.id) && this._canvasSourceRequestIds.size >= MAX_TRACKED_CANVAS_SOURCE_REQUESTS) {
 				this._redactAllUrlResponses = true;
 			} else {
