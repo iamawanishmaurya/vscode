@@ -242,4 +242,35 @@ suite('GitHub Enterprise storage migration', () => {
 			state: { [`${canonicalKey}${linksSuffix}`]: links }
 		});
 	});
+
+	for (const reverse of [false, true]) {
+		test(`an explicit legacy owner disambiguates schemes regardless of host order (${reverse})`, async () => {
+			await seed();
+			const http = vscode.Uri.parse('http://tenant.example/Team');
+			const uris = reverse ? [canonical, http] : [http, canonical];
+			for (const uri of uris) {
+				await migrateEnterpriseStorage(context, uri, uris, original);
+			}
+			assert.deepStrictEqual(await snapshot(), {
+				secrets: { [canonicalKey]: tokens },
+				state: { [`${canonicalKey}${linksSuffix}`]: links }
+			});
+		});
+	}
+
+	test('ambiguous legacy schemes require the original instance instead of choosing the first host', async () => {
+		await seed();
+		const before = await snapshot();
+		const http = vscode.Uri.parse('http://tenant.example/Team');
+		await assert.rejects(migrateEnterpriseStorage(context, http, [http, canonical]), /Set github-enterprise.uri to the original instance/);
+		assert.deepStrictEqual(await snapshot(), before);
+	});
+
+	test('an unconfigured legacy owner cannot donate its credentials to another scheme', async () => {
+		await seed();
+		const before = await snapshot();
+		const http = vscode.Uri.parse('http://tenant.example/Team');
+		await migrateEnterpriseStorage(context, http, [http], original);
+		assert.deepStrictEqual(await snapshot(), before);
+	});
 });

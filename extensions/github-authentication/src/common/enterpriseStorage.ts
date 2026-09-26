@@ -57,15 +57,16 @@ async function migrateStorage(context: vscode.ExtensionContext, source: Enterpri
 	}
 }
 
-export async function migrateEnterpriseStorage(context: vscode.ExtensionContext, uri: vscode.Uri): Promise<void> {
+export async function migrateEnterpriseStorage(context: vscode.ExtensionContext, uri: vscode.Uri, configuredUris: readonly vscode.Uri[] = [uri], legacyUri?: vscode.Uri): Promise<void> {
+	const hostKey = getEnterpriseUriKey(uri);
 	const keys = new Set([
 		...await context.secrets.keys(),
 		...context.globalState.keys().filter(key => key.endsWith(accountLinksSuffix)).map(key => key.slice(0, -accountLinksSuffix.length))
 	]);
 	const sources: EnterpriseStorage[] = [];
 	for (const key of keys) {
-		const legacyUri = getLegacyStorageUri(key, uri.scheme);
-		if (legacyUri && getEnterpriseUriKey(legacyUri) === getEnterpriseUriKey(uri)) {
+		const storedUri = getLegacyStorageUri(key, uri.scheme);
+		if (storedUri && getEnterpriseUriKey(storedUri) === hostKey) {
 			const source = await readStorage(context, key);
 			if (source.tokens !== undefined || source.links !== undefined) {
 				sources.push(source);
@@ -76,7 +77,18 @@ export async function migrateEnterpriseStorage(context: vscode.ExtensionContext,
 	if (!sources.length) {
 		return;
 	}
-	const originalKey = `${uri.authority}${uri.path}${tokenSuffix}`;
+	const original = legacyUri ?? (configuredUris.length === 1 ? configuredUris[0] : undefined);
+	const originalMatches = original && getEnterpriseUriKey(original.with({ scheme: uri.scheme })) === hostKey;
+	if (originalMatches && getEnterpriseUriKey(original) !== hostKey) {
+		return;
+	}
+	const matchingHosts = new Set(configuredUris
+		.filter(candidate => getEnterpriseUriKey(candidate.with({ scheme: uri.scheme })) === hostKey)
+		.map(getEnterpriseUriKey));
+	if (!originalMatches && matchingHosts.size > 1) {
+		throw new Error(vscode.l10n.t('Saved authentication for {0} does not identify its URL scheme. Set {1} to the original instance before migrating its saved sign-in.', uri.authority, enterpriseUriSetting));
+	}
+	const originalKey = originalMatches ? `${original.authority}${original.path}${tokenSuffix}` : undefined;
 	const source = sources.find(source => source.key === originalKey) ?? (sources.length === 1 ? sources[0] : undefined);
 	if (!source) {
 		throw new Error(vscode.l10n.t('Multiple saved authentication stores match {0}. Set {1} to the previously used URI before migrating its saved sign-in.', uri.toString(true), enterpriseUriSetting));
