@@ -6900,6 +6900,13 @@
         ]
       },
       {
+        "path": "./assets/prompts/skills/create-canvas/SKILL.md",
+        "when": "config.sessions.experimental.canvases.enabled",
+        "sessionTypes": [
+          "copilotcli"
+        ]
+      },
+      {
         "path": "./assets/prompts/skills/chronicle/SKILL.md",
         "when": "github.copilot.sessionSearch.enabled",
         "sessionTypes": [
