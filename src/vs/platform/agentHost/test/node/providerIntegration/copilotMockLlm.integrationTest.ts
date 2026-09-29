@@ -168,7 +168,7 @@ suite('Agent Host Provider Integration — Copilot with Mock LLM', function () {
 		assert.match(markdownText, new RegExp(`\\b${probeToken}\\b`, 'i'), `expected probe token in assistant markdown; got: ${JSON.stringify(markdownText)}`);
 	});
 
-	test('loads a project extension before the model opens its canvas and projects extension-started turns', async function () {
+	test('loads a project extension through the client-resolved SDK before the model opens its canvas and projects extension-started turns', async function () {
 		this.timeout(180_000);
 		const workspaceDir = await mkdtemp(`${tmpdir()}/test-mock-canvas`);
 		tempDirs.push(workspaceDir);

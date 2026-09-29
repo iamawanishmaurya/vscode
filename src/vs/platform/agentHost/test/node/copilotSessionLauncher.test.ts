@@ -832,6 +832,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 		};
 		const basePlan = {
 			client,
+			extensionSdkPath: '/copilot-sdk',
 			sessionId: 'session-1',
 			workingDirectory: testWorkingDirectory,
 			resolvedAgentName: undefined,
@@ -1008,6 +1009,29 @@ suite('CopilotSessionLauncher shared session config', () => {
 
 suite('CopilotSessionLauncher canvas config', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('fails closed when a canvas-enabled client residency has no extension SDK path', async () => {
+		const launcher = createTestLauncher(undefined, { [AgentHostCanvasesEnabledConfigKey]: true });
+		const plan: CopilotSessionLaunchPlan = {
+			kind: 'create',
+			client: returningSession({
+				sessionId: 'session-1',
+				on: () => () => { },
+				disconnect: async () => { },
+				rpc: { options: { update: async () => ({ success: true }) } },
+			} as unknown as CopilotSession),
+			sessionId: 'session-1',
+			model: undefined,
+			workingDirectory: testWorkingDirectory,
+			resolvedAgentName: undefined,
+			snapshot: { tools: [], plugins: [], mcpServers: {} },
+			activeClientToolSet: new ActiveClientToolSet(),
+			shellManager: undefined,
+			githubCredentials: CopilotGitHubSessionCredentials.fromToken(undefined),
+		};
+
+		await assert.rejects(() => launcher.launch(plan, testRuntime), /Extension SDK path is unavailable/);
+	});
 
 	test('does not request canvas extensions or rendering when canvases are disabled', async () => {
 		let captured: Parameters<CopilotClient['createSession']>[0] | undefined;

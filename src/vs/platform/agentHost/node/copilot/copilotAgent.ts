@@ -845,6 +845,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	private _invalidatingModelRefresh: Promise<void> | undefined;
 
 	private _client: CopilotClient | undefined;
+	private readonly _extensionSdkPathByClient = new WeakMap<CopilotClient, string>();
 	private _clientGeneration = 0;
 	private _clientConnectorAuthentication: { readonly connectorsEnabled: boolean; readonly enterpriseHost: string | undefined; readonly token: string | undefined } | undefined;
 	private _clientStarting: Promise<CopilotClient> | undefined;
@@ -2628,7 +2629,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			// Keep the SDK wrapper and native module paired within the bundled platform
 			// package. Only the runtime executable can be explicitly overridden.
 			const nodeModulesUri = getAppNodeModulesUri();
-			const { runtimePath: bundledRuntimePath, extensionBootstrapPath } = await resolveCopilotRuntimePaths(nodeModulesUri);
+			const { runtimePath: bundledRuntimePath, extensionBootstrapPath, extensionSdkPath } = await resolveCopilotRuntimePaths(nodeModulesUri);
 			let runtimePath = bundledRuntimePath;
 			if (startupConfig.runtimePath) {
 				await validateCopilotRuntimePath(startupConfig.runtimePath);
@@ -2684,7 +2685,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				telemetry,
 				logLevel: copilotSdkLogLevelAtStartup,
 				enableRemoteSessions: startupConfig.sessionSync,
-				...(extensionBootstrapPath ? {
+				...(extensionBootstrapPath && extensionSdkPath ? {
 					extensionLaunchProvider: {
 						resolve: request => this._resolveExtensionLaunch(request.id, request.modulePath, request.source, extensionBootstrapPath),
 					},
@@ -2701,6 +2702,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 				return this._stopClientAfterStartupTermination(client, new CopilotClientStartupConfigChangedError());
 			}
 			this._logService.info('[Copilot] CopilotClient started successfully');
+			if (extensionSdkPath) {
+				this._extensionSdkPathByClient.set(client, extensionSdkPath);
+			}
 			this._client = client;
 			this._clientGeneration++;
 			this._clientConnectorAuthentication = { connectorsEnabled: startupConfig.copilotConnectors, enterpriseHost: startupConfig.enterpriseHost, token: gitHubToken };
@@ -4371,6 +4375,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			const launchPlan: CopilotSessionLaunchPlan = {
 				kind: 'create',
 				client,
+				extensionSdkPath: this._extensionSdkPathByClient.get(client),
 				sessionId: sdkSessionId,
 				isEphemeral: provisional.isEphemeral,
 				hasScopedEditSurface: provisional.hasScopedEditSurface,
@@ -4927,6 +4932,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				launchPlan = {
 					kind: 'resume',
 					client,
+					extensionSdkPath: this._extensionSdkPathByClient.get(client),
 					sessionId: sdkSessionId,
 					workingDirectory,
 					resolvedAgentName: undefined,
@@ -4942,6 +4948,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				launchPlan = {
 					kind: 'create',
 					client,
+					extensionSdkPath: this._extensionSdkPathByClient.get(client),
 					sessionId: chatSdkId,
 					workingDirectory,
 					resolvedAgentName: undefined,
@@ -5410,6 +5417,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				const launchPlan: CopilotSessionLaunchPlan = {
 					kind: 'resume',
 					client,
+					extensionSdkPath: this._extensionSdkPathByClient.get(client),
 					sessionId: info.sdkSessionId,
 					workingDirectory,
 					additionalDirectories: launchWorkingDirectories?.slice(1),
@@ -6027,6 +6035,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const launchPlan: CopilotSessionLaunchPlan = {
 			kind: 'resume',
 			client,
+			extensionSdkPath: this._extensionSdkPathByClient.get(client),
 			sessionId,
 			workingDirectory: resolvedWorkingDirectory,
 			additionalDirectories: this._additionalCustomizationDirectories(launchWorkingDirectories),

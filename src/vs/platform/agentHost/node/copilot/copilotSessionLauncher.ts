@@ -31,8 +31,6 @@ import { IAgentHostManagedSettingsService } from '../agentHostManagedSettingsSer
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 import { IAgentHostSessionOpenTelemetry } from '../agentHostSessionOpenTelemetry.js';
 import { IByokLmBridgeRegistry } from '../byokLmBridgeRegistry.js';
-import { getAppNodeModulesUri } from '../appNodeModules.js';
-import { resolveCopilotRuntimePaths } from './copilotRuntimePaths.js';
 import { IByokLmProxyService, type IByokLmProxyHandle } from './byokLmProxyService.js';
 import type { ICopilotMcpServerInfo, ICopilotPluginInfo } from './copilotAgent.js';
 import { CopilotGitHubSessionCredentials } from './copilotGitHubCredentials.js';
@@ -243,6 +241,8 @@ type CopilotSessionClient = Pick<CopilotClient, 'createSession' | 'resumeSession
 interface ICopilotSessionLaunchBase {
 	readonly client: CopilotSessionClient;
 	readonly sessionId: string;
+	/** Release-aligned SDK root injected into extension subprocesses for this client residency. */
+	readonly extensionSdkPath?: string;
 	/** Whether this launch is for a transient session that skips durable-only provider work. */
 	readonly isEphemeral?: boolean;
 	/**
@@ -909,10 +909,11 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 
 	private async _buildSessionConfig(plan: CopilotSessionLaunchPlan, runtime: ICopilotSessionRuntime, onManagedSettingsResolved: () => void): Promise<ResumeSessionConfig> {
 		const plugins = plan.snapshot.plugins;
-		const canvasesEnabled = !plan.isEphemeral
+		const canvasRuntimeEnabled = !plan.isEphemeral
 			&& this._configurationService.getRootValue(platformRootSchema, AgentHostCanvasesEnabledConfigKey) === true;
-		const extensionSdkPath = canvasesEnabled ? (await resolveCopilotRuntimePaths(getAppNodeModulesUri())).extensionSdkPath : undefined;
-		const canvasRuntimeEnabled = extensionSdkPath !== undefined;
+		if (canvasRuntimeEnabled && !plan.extensionSdkPath) {
+			throw new Error(`Extension SDK path is unavailable for canvas-enabled Copilot session '${plan.sessionId}'`);
+		}
 		// Synthesize BYOK provider/model config (empty when BYOK is gated off or the
 		// renderer reports no BYOK models), merged into the returned config so both
 		// createSession and resumeSession advertise the models to the runtime.
@@ -1068,7 +1069,7 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			enableSkills: true,
 			requestExtensions: canvasRuntimeEnabled,
 			requestCanvasRenderer: canvasRuntimeEnabled,
-			...(extensionSdkPath !== undefined ? { extensionSdkPath } : {}),
+			...(canvasRuntimeEnabled ? { extensionSdkPath: plan.extensionSdkPath } : {}),
 			onPermissionRequest: request => runtime.handlePermissionRequest(request),
 			onUserInputRequest: (request, invocation) => runtime.handleUserInputRequest(request, invocation),
 			onElicitationRequest: context => runtime.handleElicitationRequest(context),
