@@ -23,6 +23,7 @@ import { ITelemetryService, TelemetryLevel } from '../../../telemetry/common/tel
 import { AgentCanvasAvailability, type IAgentCanvasSnapshot, type IAgentCreateChatRequestOptions, type IAgentCreateSessionConfig, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type AuthenticateParams, type AuthenticateResult } from '../../common/agent.js';
 import { type IAgentHostManagedSettingsDiagnostics, type IAgentHostNetworkDiagnosticsInfo, type IAgentHostNetworkFetchResult, type IAgentService } from '../../common/agentService.js';
 import { AgentHostCanvasesChangedNotification, DevContainerConnectExtensionMethod, DevContainerDisconnectExtensionMethod, DevContainerIsDockerAvailableExtensionMethod, DevContainerOutputNotification, RemoveSessionArtifactExtensionMethod, RequestAgentHostWorkspaceTrustExtensionMethod, ResolveAgentHostCanvasSourceExtensionMethod, supportsAgentHostArtifactRemoval, supportsAgentHostCanvases, supportsAgentHostDevContainers } from '../../common/agentHostExtensionProtocol.js';
+import { AgentHostCanvasesEnabledConfigKey } from '../../common/agentHostSchema.js';
 import { ChatSourceKind, CompletionsParams, CompletionsResult, ContentEncoding, CreateTerminalParams, ListSessionsResult, ResourceReadResult, ResolveSessionConfigResult, SessionConfigCompletionsResult, ResourceMkdirParams, ResourceMkdirResult, ResourceResolveParams, ResourceResolveResult, ResourceCopyParams, ResourceCopyResult } from '../../common/state/protocol/commands.js';
 import type { AutomationCapabilities, Implementation } from '../../common/state/protocol/common/commands.js';
 import type { FetchAutomationRunsParams, FetchAutomationRunsResult, ListAutomationTriggerDefinitionsParams, ListAutomationTriggerDefinitionsResult, RunAutomationParams, RunAutomationResult } from '../../common/state/protocol/channels-automation/commands.js';
@@ -510,6 +511,10 @@ suite('ProtocolServerHandler', () => {
 	});
 
 	test('canvas extension is local-only, publishes full snapshots, and fences source resolution', async () => {
+		stateManager.dispatchServerAction('ahp-root://', {
+			type: ActionType.RootConfigChanged,
+			config: { [AgentHostCanvasesEnabledConfigKey]: true },
+		});
 		const snapshot: IAgentCanvasSnapshot = {
 			chat: URI.parse(defaultChatUri),
 			canvases: [{
@@ -536,8 +541,17 @@ suite('ProtocolServerHandler', () => {
 			instanceId: 'preview-1',
 			revision: 4,
 		}));
+		stateManager.dispatchServerAction('ahp-root://', {
+			type: ActionType.RootConfigChanged,
+			config: { [AgentHostCanvasesEnabledConfigKey]: false },
+		});
 		agentService.fireCanvasSnapshot(snapshot);
-		agentService.fireCanvasSnapshot({ chat: snapshot.chat, canvases: [] });
+		const disabledSourceResponse = waitForResponse(local, 3);
+		local.simulateMessage(request(3, ResolveAgentHostCanvasSourceExtensionMethod, {
+			chat: defaultChatUri,
+			instanceId: 'preview-1',
+			revision: 4,
+		}));
 		const remoteSourceResponse = waitForResponse(remote, 2);
 		remote.simulateMessage(request(2, ResolveAgentHostCanvasSourceExtensionMethod, {
 			chat: defaultChatUri,
@@ -553,6 +567,7 @@ suite('ProtocolServerHandler', () => {
 			localSnapshots: findNotifications(local.sent, AgentHostCanvasesChangedNotification).map(notification => notification.params),
 			remoteSnapshots: findNotifications(remote.sent, AgentHostCanvasesChangedNotification).length,
 			sourceResponse: await sourceResponse,
+			disabledSourceResponse: await disabledSourceResponse,
 			remoteSourceResponse: await remoteSourceResponse,
 			resolveCalls: agentService.resolveCanvasSourceCalls,
 		}, {
@@ -563,6 +578,11 @@ suite('ProtocolServerHandler', () => {
 			],
 			remoteSnapshots: 0,
 			sourceResponse: { jsonrpc: '2.0', id: 2, result: { url: 'https://example.test/canvas' } },
+			disabledSourceResponse: {
+				jsonrpc: '2.0',
+				id: 3,
+				error: { code: JsonRpcErrorCodes.MethodNotFound, message: `Method not found: ${ResolveAgentHostCanvasSourceExtensionMethod}` },
+			},
 			remoteSourceResponse: {
 				jsonrpc: '2.0',
 				id: 2,

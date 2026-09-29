@@ -84,7 +84,7 @@ suite('SessionCanvasService', () => {
 		assert.deepStrictEqual(openOptions, [{ pinned: true, revealIfOpened: true, preserveFocus: false }]);
 	});
 
-	test('closes canvases when the experimental presentation setting is disabled', async () => {
+	test('closes canvases when the canvas feature setting is disabled', async () => {
 		const { configurationService, opened } = createHarness();
 
 		await configurationService.setUserConfiguration(SessionCanvasesEnabledSettingId, false);

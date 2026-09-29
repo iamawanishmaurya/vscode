@@ -59,6 +59,7 @@ export class CopilotSessionWrapper extends Disposable {
 
 	constructor(
 		readonly session: CopilotSession,
+		readonly canvasRuntimeEnabled: boolean,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();

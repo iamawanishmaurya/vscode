@@ -2755,7 +2755,7 @@ export class CopilotAgentSession extends Disposable {
 	}
 
 	private async _waitForCanvasExtensions(wrapper: CopilotSessionWrapper): Promise<void> {
-		if (this._launchPlan.isEphemeral) {
+		if (!wrapper.canvasRuntimeEnabled) {
 			return;
 		}
 		const settled = new DeferredPromise<boolean>();
@@ -7861,11 +7861,15 @@ export class CopilotAgentSession extends Disposable {
 		}));
 
 		this._register(wrapper.onExtensionsLoaded(() => {
-			this._canvasProjectionReady = true;
+			if (wrapper.canvasRuntimeEnabled) {
+				this._canvasProjectionReady = true;
+			}
 		}));
 
 		this._register(wrapper.onCanvasRegistryChanged(() => {
-			this._canvasProjectionReady = true;
+			if (wrapper.canvasRuntimeEnabled) {
+				this._canvasProjectionReady = true;
+			}
 		}));
 
 		this._register(wrapper.onUserMessage(e => {
@@ -7875,7 +7879,7 @@ export class CopilotAgentSession extends Disposable {
 		}));
 
 		this._register(wrapper.onCanvasOpened(e => {
-			if (e.agentId || !this._canvasProjectionReady || this._ignoredRestoredCanvasInstanceIds.has(e.data.instanceId)) {
+			if (!wrapper.canvasRuntimeEnabled || e.agentId || !this._canvasProjectionReady || this._ignoredRestoredCanvasInstanceIds.has(e.data.instanceId)) {
 				return;
 			}
 			const url = this._canvasSource(e.data.url);
@@ -7906,14 +7910,14 @@ export class CopilotAgentSession extends Disposable {
 		}));
 
 		this._register(wrapper.onCanvasClosed(e => {
-			if (e.agentId || !this._canvasByInstanceId.delete(e.data.instanceId)) {
+			if (!wrapper.canvasRuntimeEnabled || e.agentId || !this._canvasByInstanceId.delete(e.data.instanceId)) {
 				return;
 			}
 			this._publishCanvases();
 		}));
 
 		this._register(wrapper.onCanvasUnavailable(e => {
-			if (e.agentId) {
+			if (!wrapper.canvasRuntimeEnabled || e.agentId) {
 				return;
 			}
 			const projection = this._canvasByInstanceId.get(e.data.instanceId);

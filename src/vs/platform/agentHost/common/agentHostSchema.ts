@@ -452,6 +452,9 @@ export const AgentHostSessionSyncEnabledConfigKey = 'sessionSyncEnabled';
 /** Whether extension-provided BYOK models are enabled. */
 export const AgentHostByokModelsEnabledConfigKey = 'byokModelsEnabled';
 
+/** Whether local Copilot sessions may launch and project canvas extensions. */
+export const AgentHostCanvasesEnabledConfigKey = 'canvasesEnabled';
+
 /**
  * Root config key forwarded from the renderer carrying the experiment-aware
  * value of `chat.agentHost.codexAgent.enabled`. The host registers the Codex
@@ -818,6 +821,12 @@ export const platformRootSchema = createSchema({
 		type: 'boolean',
 		title: localize('agentHost.config.byokModelsEnabled.title', "BYOK Models"),
 		description: localize('agentHost.config.byokModelsEnabled.description', "Whether extension-provided BYOK models are enabled."),
+		default: false,
+	}),
+	[AgentHostCanvasesEnabledConfigKey]: schemaProperty<boolean>({
+		type: 'boolean',
+		title: localize('agentHost.config.canvasesEnabled.title', "Canvases"),
+		description: localize('agentHost.config.canvasesEnabled.description', "Whether local Copilot sessions may launch and project canvas extensions."),
 		default: false,
 	}),
 	[AgentHostCodexEnabledConfigKey]: schemaProperty<boolean>({

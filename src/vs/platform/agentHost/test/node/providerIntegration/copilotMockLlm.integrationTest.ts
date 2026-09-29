@@ -17,6 +17,7 @@ import { isWindows } from '../../../../../base/common/platform.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ActionType, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction, type ChatTurnStartedAction } from '../../../common/state/sessionActions.js';
 import { AgentHostCanvasesChangedNotification, ResolveAgentHostCanvasSourceExtensionMethod, type IAgentHostCanvasesChangedParams, type IAgentHostExtensionCommandMap } from '../../../common/agentHostExtensionProtocol.js';
+import { AgentHostCanvasesEnabledConfigKey } from '../../../common/agentHostSchema.js';
 import { AgentHostClientConnectionKind } from '../../../common/agentHostTelemetry.js';
 import { PROTOCOL_VERSION } from '../../../common/state/protocol/version/registry.js';
 import { buildDefaultChatUri, MessageKind, PendingMessageKind, ResponsePartKind, ROOT_STATE_URI, SessionStatus, ToolCallContributorKind, ToolResultContentType, type ISessionWithDefaultChat, type ToolDefinition } from '../../../common/state/sessionState.js';
@@ -204,8 +205,22 @@ session = await joinSession({
 });
 `, 'utf8');
 
-		const sessionUri = await createProviderSession(client, CANVAS_COPILOT_CONFIG, 'real-sdk-mock-canvas', createdSessions, URI.file(workspaceDir));
-		dispatchTurn(client, sessionUri, 'turn-mock-canvas', `[scenario:${CANVAS_SCENARIO_ID}] Open the available proof canvas.`, 1);
+		const sessionUri = await createProviderSession(
+			client,
+			CANVAS_COPILOT_CONFIG,
+			'real-sdk-mock-canvas',
+			createdSessions,
+			URI.file(workspaceDir),
+			async () => client.dispatch({
+				channel: ROOT_STATE_URI,
+				clientSeq: 1,
+				action: {
+					type: ActionType.RootConfigChanged,
+					config: { [AgentHostCanvasesEnabledConfigKey]: true },
+				},
+			}),
+		);
+		dispatchTurn(client, sessionUri, 'turn-mock-canvas', `[scenario:${CANVAS_SCENARIO_ID}] Open the available proof canvas.`, 2);
 		const startNotification = await client.waitForNotification(n =>
 			isActionNotification(n, ActionType.ChatToolCallStart)
 			&& (getActionEnvelope(n).action as ChatToolCallStartAction).toolName === 'open_canvas',

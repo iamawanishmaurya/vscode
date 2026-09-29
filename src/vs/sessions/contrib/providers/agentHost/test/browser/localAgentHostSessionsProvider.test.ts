@@ -22,6 +22,7 @@ import { AgentCanvasAvailability, AgentSession, CODEX_AGENT_PROVIDER_ID, type IA
 import { agentSdkSetupStatusKey } from '../../../../../../platform/agentHost/common/agentSdkSetup.js';
 import { AgentHostCodexAgentEnabledSettingId, IAgentHostService, type IAgentHostCanvases } from '../../../../../../platform/agentHost/common/agentService.js';
 import { getAgentHostExtensionInitializeResultMeta, supportsAgentHostCanvases } from '../../../../../../platform/agentHost/common/agentHostExtensionProtocol.js';
+import { AgentHostCanvasesEnabledConfigKey } from '../../../../../../platform/agentHost/common/agentHostSchema.js';
 import { AgentHostAutonomousAutomationsCapabilityMetaKey } from '../../../../../../platform/agentHost/common/meta/agentHostAutomationsMeta.js';
 import { CODEX_ACCOUNT_META_KEY } from '../../../../../../platform/agentHost/common/codexAccount.js';
 import type { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
@@ -902,7 +903,10 @@ suite('LocalAgentHostSessionsProvider', () => {
 			...agentHost.initializeResult.get(),
 			_meta: getAgentHostExtensionInitializeResultMeta(true, false, false, false, true),
 		}, undefined);
-		agentHost.setAgents([{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [], capabilities: { multipleChats: { fork: true } } } as AgentInfo]);
+		agentHost.setRootState({
+			agents: [{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [], capabilities: { multipleChats: { fork: true } } } as AgentInfo],
+			config: { schema: { type: 'object', properties: {} }, values: { [AgentHostCanvasesEnabledConfigKey]: true } },
+		});
 		const supportsMultipleChatsAfterHydration = provider.getSessions()[0].capabilities.get().supportsMultipleChats;
 		const supportsCanvasesAfterHydration = provider.getSessions()[0].capabilities.get().supportsCanvases;
 		agentHost.setRootStateError();
@@ -922,7 +926,7 @@ suite('LocalAgentHostSessionsProvider', () => {
 			supportsMultipleChatsAfterHydration: true,
 			supportsCanvasesAfterHydration: true,
 			supportsMultipleChatsAfterError: false,
-			supportsCanvasesAfterError: true,
+			supportsCanvasesAfterError: false,
 		});
 	});
 
@@ -6674,11 +6678,15 @@ suite('LocalAgentHostSessionsProvider', () => {
 		}
 
 		test('maps local Copilot canvas snapshots into provider-neutral chat canvases', async () => {
+			const agents = [{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [], capabilities: {} } as AgentInfo];
 			agentHost.initializeResult.set({
 				...agentHost.initializeResult.get(),
 				_meta: getAgentHostExtensionInitializeResultMeta(true, false, false, false, true),
 			}, undefined);
-			agentHost.setAgents([{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [], capabilities: {} } as AgentInfo]);
+			agentHost.setRootState({
+				agents,
+				config: { schema: { type: 'object', properties: {} }, values: { [AgentHostCanvasesEnabledConfigKey]: true } },
+			});
 			const activeSession = observableValue<IActiveSession | undefined>('activeSession', undefined);
 			const provider = createProvider(disposables, agentHost, undefined, { activeSession });
 			const rawId = 'canvas-projection';
@@ -6705,7 +6713,21 @@ suite('LocalAgentHostSessionsProvider', () => {
 			const canvas = session.mainChat.get().canvases?.get()[0];
 			assert.ok(canvas);
 			const source = await canvas.resolveSource();
-			agentHost.setCanvasSnapshot({ chat, canvases: [] });
+			agentHost.setRootState({
+				agents,
+				config: { schema: { type: 'object', properties: {} }, values: { [AgentHostCanvasesEnabledConfigKey]: false } },
+			});
+			await assert.rejects(() => canvas.resolveSource(), /disabled/);
+			agentHost.setCanvasSnapshot({
+				chat,
+				canvases: [{
+					instanceId: 'ignored',
+					extensionId: 'project:preview',
+					canvasId: 'preview',
+					revision: 3,
+					availability: AgentCanvasAvailability.Ready,
+				}],
+			});
 
 			assert.deepStrictEqual({
 				supportsCanvases: session.capabilities.get().supportsCanvases,
@@ -6718,9 +6740,9 @@ suite('LocalAgentHostSessionsProvider', () => {
 					availability: canvas.availability,
 				},
 				source: source.toString(),
-				afterClear: session.mainChat.get().canvases?.get(),
+				afterDisable: session.mainChat.get().canvases?.get(),
 			}, {
-				supportsCanvases: true,
+				supportsCanvases: false,
 				canvas: {
 					resource: 'agent-host-canvas',
 					instanceId: 'preview-1',
@@ -6730,7 +6752,7 @@ suite('LocalAgentHostSessionsProvider', () => {
 					availability: 'ready',
 				},
 				source: 'https://example.test/preview-1/2',
-				afterClear: [],
+				afterDisable: [],
 			});
 		});
 

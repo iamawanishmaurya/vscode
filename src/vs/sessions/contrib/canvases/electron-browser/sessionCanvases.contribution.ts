@@ -7,8 +7,9 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { AccessibleViewType } from '../../../../platform/accessibility/browser/accessibleView.js';
 import { AccessibleViewRegistry } from '../../../../platform/accessibility/browser/accessibleViewRegistry.js';
+import { AgentHostCanvasesEnabledConfigKey } from '../../../../platform/agentHost/common/agentHostSchema.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
-import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
+import { AgentHostConfigurationSyncScope, ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -28,9 +29,10 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		[SessionCanvasesEnabledSettingId]: {
 			type: 'boolean',
 			default: false,
-			scope: ConfigurationScope.WINDOW,
+			scope: ConfigurationScope.APPLICATION,
 			tags: ['experimental'],
-			markdownDescription: localize('canvas.configurationDescription', "Show model-opened canvas views in the local Agents window when the connected runtime supports them. This preview preference does not approve extension execution, grant environment access, or override runtime policy."),
+			markdownDescription: localize('canvas.configurationDescription', "Enable experimental canvases for local Copilot sessions. When enabled, trusted project canvas extensions may launch, canvas tools are available to the model, and opened canvases appear in Agents. This does not grant Workspace Trust, approve extension execution, or override runtime policy."),
+			agentHost: { key: AgentHostCanvasesEnabledConfigKey, scope: AgentHostConfigurationSyncScope.Local },
 		},
 	},
 });

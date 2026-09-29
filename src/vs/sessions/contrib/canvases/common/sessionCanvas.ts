@@ -14,7 +14,7 @@ import { EditorInputCapabilities, IUntypedEditorInput, Verbosity } from '../../.
 import { EditorInput } from '../../../../workbench/common/editor/editorInput.js';
 import { IChat, ISession, ISessionCanvas } from '../../../services/sessions/common/session.js';
 
-/** Presentation preference only; runtime admission remains provider-owned. */
+/** Controls local canvas runtime admission and Sessions presentation. */
 export const SessionCanvasesEnabledSettingId = 'sessions.experimental.canvases.enabled';
 
 export interface ISessionCanvasReference {

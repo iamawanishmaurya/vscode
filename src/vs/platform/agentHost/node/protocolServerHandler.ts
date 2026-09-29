@@ -24,6 +24,7 @@ import { isAnnotationsUri } from '../common/annotationsUri.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
 import { type IAgentService } from '../common/agentService.js';
 import { AgentHostCanvasesChangedNotification, ClaimAgentHostDetachedWorktreeExtensionMethod, collectAgentHostDebugLogsParamsValidator, CollectAgentHostDebugLogsExtensionMethod, CreateAgentHostDetachedWorktreeExtensionMethod, DeleteAgentHostDetachedWorktreeExtensionMethod, getAgentHostExtensionInitializeResultMeta, GetAgentHostSessionStateFileExtensionMethod, ImportSessionExtensionMethod, importSessionParamsValidator, isValidAgentHostCanvasesChangedParams, ReadAgentHostDebugLogsChunkExtensionMethod, ReconcileAgentHostDetachedWorktreesExtensionMethod, RemoveSessionArtifactExtensionMethod, removeSessionArtifactParamsValidator, ReportAgentHostFirstResponseExtensionMethod, ReportChatUserInteractionExtensionMethod, RequestAgentHostWorkspaceTrustExtensionMethod, resolveAgentHostCanvasSourceParamsValidator, ResolveAgentHostCanvasSourceExtensionMethod, SetAgentHostDetachedWorktreeArchivedExtensionMethod, type IAgentHostCanvasesChangedParams, type IAgentHostExtensionInitializeResult, type IAgentHostExtensionServerCommandMap, type IAgentHostWorkspaceTrustRequest } from '../common/agentHostExtensionProtocol.js';
+import { AgentHostCanvasesEnabledConfigKey } from '../common/agentHostSchema.js';
 import { IAgentHostOTelService } from '../common/otel/agentHostOTelService.js';
 import { agentHostFirstResponseValidator } from '../common/otel/agentHostTiming.js';
 import { chatUserInteractionAttributes, chatUserInteractionValidator } from '../../otel/common/chatUserInteraction.js';
@@ -414,6 +415,9 @@ export class ProtocolServerHandler extends Disposable implements IAgentHostClien
 
 		this._register(this._stateManager.onDidEmitEnvelope(envelope => {
 			this._recordAndBroadcastAction(envelope);
+			if (envelope.action.type === ActionType.RootConfigChanged && !this._canvasesEnabled()) {
+				this._clearCanvasSnapshots();
+			}
 			// A client tool call may be issued for a client that is no longer
 			// connected — e.g. a stale stamp from a window that reloaded. The
 			// live-disconnect path (`_handleClientDisconnected`) does not cover
@@ -1422,6 +1426,10 @@ export class ProtocolServerHandler extends Disposable implements IAgentHostClien
 		return client.telemetryContext.connectionKind === AgentHostClientConnectionKind.Local;
 	}
 
+	private _canvasesEnabled(): boolean {
+		return this._stateManager.rootState.config?.values[AgentHostCanvasesEnabledConfigKey] === true;
+	}
+
 	private _createClientTelemetryContext(clientInfo: Implementation | undefined, meta: Record<string, unknown> | undefined, transport: IProtocolTransport, fallbackConnectionKind = AgentHostClientConnectionKind.Unknown): IAgentHostClientTelemetryContext {
 		const connectionKind = readClientConnectionKind(meta);
 		const machineId = readClientMachineId(meta);
@@ -1964,7 +1972,7 @@ export class ProtocolServerHandler extends Disposable implements IAgentHostClien
 	}
 
 	private _handleResolveCanvasSourceRequest(client: IConnectedClient, params: unknown): Promise<unknown> | undefined {
-		if (!this._supportsCanvases(client)) {
+		if (!this._supportsCanvases(client) || !this._canvasesEnabled()) {
 			return undefined;
 		}
 		const validated = resolveAgentHostCanvasSourceParamsValidator.validate(params);
@@ -2288,6 +2296,10 @@ export class ProtocolServerHandler extends Disposable implements IAgentHostClien
 	}
 
 	private _recordAndBroadcastCanvasSnapshot(snapshot: IAgentCanvasSnapshot): void {
+		if (!this._canvasesEnabled()) {
+			this._clearCanvasSnapshots();
+			return;
+		}
 		const params: IAgentHostCanvasesChangedParams = {
 			chat: snapshot.chat.toString(),
 			canvases: [...snapshot.canvases],
@@ -2321,7 +2333,7 @@ export class ProtocolServerHandler extends Disposable implements IAgentHostClien
 	}
 
 	private _sendCurrentCanvasSnapshots(client: IConnectedClient): void {
-		if (!this._supportsCanvases(client)) {
+		if (!this._supportsCanvases(client) || !this._canvasesEnabled()) {
 			return;
 		}
 		for (const snapshot of this._canvasSnapshots.values()) {
@@ -2336,6 +2348,23 @@ export class ProtocolServerHandler extends Disposable implements IAgentHostClien
 		// eslint-disable-next-line local/code-no-dangerous-type-assertions
 		const message = { jsonrpc: '2.0' as const, method: AgentHostCanvasesChangedNotification, params } as unknown as AhpServerNotification;
 		client.transport.send(message);
+	}
+
+	private _clearCanvasSnapshots(): void {
+		if (this._canvasSnapshots.size === 0) {
+			return;
+		}
+		const chats = [...this._canvasSnapshots.keys()];
+		this._canvasSnapshots.clear();
+		for (const record of this._clients.values()) {
+			const client = this._getActiveClientFromRecord(record);
+			if (!client || !this._supportsCanvases(client)) {
+				continue;
+			}
+			for (const chat of chats) {
+				this._sendCanvasSnapshot(client, { chat, canvases: [] });
+			}
+		}
 	}
 
 	private _broadcastNotification(notification: INotification): void {
