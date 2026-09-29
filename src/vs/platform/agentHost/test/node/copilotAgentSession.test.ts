@@ -1987,7 +1987,7 @@ suite('CopilotAgentSession', () => {
 			title: 'Preview',
 			status: 'ready',
 			url: 'https://example.test/live',
-		});
+		}, { id: 'live-open' });
 		mockSession.fire('session.canvas.opened', {
 			instanceId: 'preview',
 			extensionId: 'project:preview',
@@ -1996,7 +1996,7 @@ suite('CopilotAgentSession', () => {
 			title: 'Preview',
 			status: 'ready',
 			url: 'https://example.test/live',
-		});
+		}, { id: 'live-open' });
 		const source = session.resolveCanvasSource('preview', 1);
 		mockSession.fire('session.canvas.unavailable', {
 			instanceId: 'preview',
@@ -2047,6 +2047,30 @@ suite('CopilotAgentSession', () => {
 				},
 			],
 		});
+	});
+
+	test('publishes a new revision when the agent reopens an unchanged canvas instance', async () => {
+		const { session, mockSession, canvasSnapshots } = await createAgentSession(disposables);
+		const canvas = {
+			instanceId: 'preview',
+			extensionId: 'project:preview',
+			canvasId: 'preview',
+			title: 'Preview',
+			url: 'https://example.test/live',
+		};
+
+		mockSession.fire('session.canvas.opened', canvas, { id: 'open-1' });
+		mockSession.fire('session.canvas.opened', canvas, { id: 'open-2' });
+
+		assert.throws(() => session.resolveCanvasSource('preview', 1), /not available/);
+		assert.deepStrictEqual({
+			revisions: canvasSnapshots.map(snapshot => snapshot.canvases[0]?.revision),
+			source: session.resolveCanvasSource('preview', 2),
+		}, {
+			revisions: [1, 2],
+			source: 'https://example.test/live',
+		});
+		session.dispose();
 	});
 
 	test('bounds the live canvas projection and evicts the oldest instance', async () => {

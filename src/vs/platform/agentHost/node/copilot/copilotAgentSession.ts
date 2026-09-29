@@ -555,6 +555,7 @@ export interface ICopilotAgentSessionOptions {
 interface ICopilotCanvasProjection {
 	readonly canvas: IAgentCanvas;
 	readonly url: string | undefined;
+	readonly openEventId: string;
 }
 
 export interface ICopilotWorkingDirectoryChangeTransaction {
@@ -7880,14 +7881,7 @@ export class CopilotAgentSession extends Disposable {
 			const url = this._canvasSource(e.data.url);
 			const availability = url === undefined ? AgentCanvasAvailability.Unavailable : AgentCanvasAvailability.Ready;
 			const existing = this._canvasByInstanceId.get(e.data.instanceId);
-			if (existing
-				&& existing.url === url
-				&& existing.canvas.extensionId === e.data.extensionId
-				&& existing.canvas.extensionName === e.data.extensionName
-				&& existing.canvas.canvasId === e.data.canvasId
-				&& existing.canvas.title === e.data.title
-				&& existing.canvas.status === e.data.status
-				&& existing.canvas.availability === availability) {
+			if (existing?.openEventId === e.id) {
 				return;
 			}
 			if (!existing && this._canvasByInstanceId.size >= AGENT_HOST_CANVAS_LIMIT) {
@@ -7907,7 +7901,7 @@ export class CopilotAgentSession extends Disposable {
 				revision: ++this._canvasRevision,
 				availability,
 			};
-			this._canvasByInstanceId.set(canvas.instanceId, { canvas, url });
+			this._canvasByInstanceId.set(canvas.instanceId, { canvas, url, openEventId: e.id });
 			this._publishCanvases();
 		}));
 
@@ -7931,7 +7925,7 @@ export class CopilotAgentSession extends Disposable {
 				revision: ++this._canvasRevision,
 				availability: AgentCanvasAvailability.Unavailable,
 			};
-			this._canvasByInstanceId.set(canvas.instanceId, { canvas, url: undefined });
+			this._canvasByInstanceId.set(canvas.instanceId, { canvas, url: undefined, openEventId: projection.openEventId });
 			this._publishCanvases();
 		}));
 

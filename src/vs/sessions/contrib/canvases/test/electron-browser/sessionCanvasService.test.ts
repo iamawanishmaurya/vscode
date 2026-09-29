@@ -106,6 +106,15 @@ suite('SessionCanvasService', () => {
 		assert.strictEqual(opened.length, 2);
 	});
 
+	test('reveals a dismissed canvas when the provider publishes a new open revision', () => {
+		const { canvas, canvases, opened } = createHarness();
+		opened[0].dispose();
+
+		canvases.set([{ ...canvas, revision: 2 }], undefined);
+
+		assert.strictEqual(opened.length, 2);
+	});
+
 	test('forgets dismissed revisions when the owning session disappears', () => {
 		const { activeSession, opened, session, sessionChanges } = createHarness();
 		opened[0].dispose();
