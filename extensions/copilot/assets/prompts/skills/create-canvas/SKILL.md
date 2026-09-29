@@ -57,11 +57,11 @@ Keep `extension.mjs` focused on wiring. Put substantial HTML, CSS, client JavaSc
 ## Validate
 
 1. Run `node --check .github/extensions/<name>/extension.mjs` and the smallest relevant extension tests.
-2. The VS Code Agent Host does not expose the GitHub App `extensions_manage` or `extensions_reload` tools. Tell the user to run `/extensions` and choose reload, or start a fresh Copilot session.
+2. Call `extensions_reload` after creating or modifying the extension. This stops and restarts all extension providers; previously open canvases are rehydrated after their providers reconnect.
 3. After reload, do not claim success until the runtime confirms the canvas:
    - call `list_canvas_capabilities` for the canvas ID;
    - call `open_canvas` with a stable `instanceId` and schema-valid input;
    - call at least one `invoke_canvas_action` when actions exist.
 4. Close the canvas tab, ask the agent to reopen the same instance, and confirm the state is preserved.
 
-Summarize the files created, the canvas and action IDs, where state is stored, and the required reload step.
+Summarize the files created, the canvas and action IDs, where state is stored, and the reload and runtime verification results.

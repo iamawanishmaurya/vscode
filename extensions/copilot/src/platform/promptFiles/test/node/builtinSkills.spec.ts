@@ -51,13 +51,13 @@ suite('built-in skills', () => {
 			'list_canvas_capabilities',
 			'open_canvas',
 			'invoke_canvas_action',
-			'does not expose the GitHub App',
-			'run `/extensions`',
+			'extensions_reload',
+			'previously open canvases are rehydrated',
 		];
 
 		expect(required.filter(anchor => !skill.includes(anchor))).toEqual([]);
 		expect(skill).not.toContain('disable-model-invocation: true');
 		expect(skill).not.toContain('extensions_manage({');
-		expect(skill).not.toContain('extensions_reload({');
+		expect(skill).not.toContain('run `/extensions`');
 	});
 });

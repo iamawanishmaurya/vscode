@@ -38,6 +38,7 @@ import { ByokLmBridgeRegistry, IByokLmBridgeRegistry } from '../../node/byokLmBr
 import { ByokLmProxyService, IByokLmProxyService, type IByokLmProxyHandle } from '../../node/copilot/byokLmProxyService.js';
 import { resolveCopilotMcpServerInfo, type ICopilotPluginInfo } from '../../node/copilot/copilotAgent.js';
 import { CopilotGitHubSessionCredentials } from '../../node/copilot/copilotGitHubCredentials.js';
+import { CopilotExtensionsReloadToolName } from '../../node/copilot/copilotExtensionTools.js';
 import type { ShellManager } from '../../node/copilot/copilotShellTools.js';
 import type { SandboxConfig } from '../../node/copilot/sandboxConfigForSdk.js';
 import { CopilotSessionLauncher, filterClientToolNames, getCopilotAutoTier, getCopilotReasoningEffort, isCopilotReasoningEffort, resolveByokSessionConfig, normalizeToolFilterPatterns, resolveConfiguredReasoningEffortOverride, resolveCopilotAutoTier, resolveCopilotReasoningEffort, toSdkToolFilterPatterns, type CopilotSessionLaunchPlan, type ICopilotSessionRuntime } from '../../node/copilot/copilotSessionLauncher.js';
@@ -58,6 +59,7 @@ const testRuntime: ICopilotSessionRuntime = {
 	handleUserPromptSubmitted: () => undefined,
 	createClientSdkTools: () => [],
 	createServerSdkTools: () => [],
+	reloadExtensions: async () => { },
 };
 
 const testWorkingDirectory = URI.file(process.cwd());
@@ -872,6 +874,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 				createRequestExtensions: createConfigs[0].requestExtensions,
 				createRequestCanvasRenderer: createConfigs[0].requestCanvasRenderer,
 				createExtensionSdkPath: createConfigs[0].extensionSdkPath?.replaceAll('\\', '/').endsWith('/copilot-sdk'),
+				createToolNames: createConfigs[0].tools?.map(tool => tool.name),
 				resumeClientName: resumeConfigs[0].clientName,
 				resumeGitHubMcpToolConfig: resumeConfigs[0].githubMcpToolConfig,
 				resumePluginDirectories: resumeConfigs[0].pluginDirectories,
@@ -887,6 +890,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 				resumeRequestExtensions: resumeConfigs[0].requestExtensions,
 				resumeRequestCanvasRenderer: resumeConfigs[0].requestCanvasRenderer,
 				resumeExtensionSdkPath: resumeConfigs[0].extensionSdkPath?.replaceAll('\\', '/').endsWith('/copilot-sdk'),
+				resumeToolNames: resumeConfigs[0].tools?.map(tool => tool.name),
 				ephemeralMcpServers: createConfigs[1].mcpServers,
 				ephemeralMcpOAuthTokenStorage: createConfigs[1].mcpOAuthTokenStorage,
 				ephemeralDisabledMcpServers: createConfigs[1].disabledMcpServers,
@@ -894,6 +898,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 				ephemeralRequestExtensions: createConfigs[1].requestExtensions,
 				ephemeralRequestCanvasRenderer: createConfigs[1].requestCanvasRenderer,
 				ephemeralExtensionSdkPath: createConfigs[1].extensionSdkPath,
+				ephemeralToolNames: createConfigs[1].tools?.map(tool => tool.name),
 				mcpProjectionTraces: logService.traces.filter(message => message.includes('MCP launch projection:')).map(message => JSON.parse(message.slice(message.indexOf('{')))),
 				sensitiveProjectionValues: [
 					'/sensitive/plugin-command',
@@ -930,6 +935,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 				createRequestExtensions: true,
 				createRequestCanvasRenderer: true,
 				createExtensionSdkPath: true,
+				createToolNames: [CopilotExtensionsReloadToolName],
 				resumeClientName: 'vscode-agent-host',
 				resumeGitHubMcpToolConfig: { disableFormDeferral: true },
 				resumePluginDirectories: [pluginDir.fsPath, syntheticPluginDir.fsPath],
@@ -952,6 +958,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 				resumeRequestExtensions: true,
 				resumeRequestCanvasRenderer: true,
 				resumeExtensionSdkPath: true,
+				resumeToolNames: [CopilotExtensionsReloadToolName],
 				ephemeralMcpServers: {},
 				ephemeralMcpOAuthTokenStorage: 'in-memory',
 				ephemeralDisabledMcpServers: ['azure', 'disabled-workspace-server', 'github', 'native-plugin-server', 'synced-server'],
@@ -959,6 +966,7 @@ suite('CopilotSessionLauncher shared session config', () => {
 				ephemeralRequestExtensions: false,
 				ephemeralRequestCanvasRenderer: false,
 				ephemeralExtensionSdkPath: undefined,
+				ephemeralToolNames: [],
 				mcpProjectionTraces: [
 					{
 						ephemeral: false,
@@ -1037,11 +1045,13 @@ suite('CopilotSessionLauncher canvas config', () => {
 				requestExtensions: captured?.requestExtensions,
 				requestCanvasRenderer: captured?.requestCanvasRenderer,
 				extensionSdkPath: captured?.extensionSdkPath,
+				toolNames: captured?.tools?.map(tool => tool.name),
 				wrapperCanvasRuntimeEnabled: wrapper.canvasRuntimeEnabled,
 			}, {
 				requestExtensions: false,
 				requestCanvasRenderer: false,
 				extensionSdkPath: undefined,
+				toolNames: [],
 				wrapperCanvasRuntimeEnabled: false,
 			});
 		} finally {

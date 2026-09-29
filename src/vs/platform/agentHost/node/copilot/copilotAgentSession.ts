@@ -2844,6 +2844,7 @@ export class CopilotAgentSession extends Disposable {
 			requestUnsandboxedCommandConfirmation: this._guarded(request => this._requestUnsandboxedCommandConfirmation(request), false, 'unsandboxed-command-confirmation'),
 			createClientSdkTools: toolSearchActive => this._createClientSdkTools(toolSearchActive),
 			createServerSdkTools: () => this._createServerSdkTools(),
+			reloadExtensions: () => this.reloadExtensions(),
 			handlePreToolUse: input => this._handlePreToolUse(input),
 			handlePostToolUse: input => this._handlePostToolUse(input),
 			handleUserPromptSubmitted: () => this.handleUserPromptSubmitted(),
@@ -3219,6 +3220,12 @@ export class CopilotAgentSession extends Disposable {
 		this._pendingSnapshotReminder = undefined;
 		const additionalContext = parts.length > 0 ? parts.join('\n\n') : undefined;
 		return additionalContext ? { additionalContext } : undefined;
+	}
+
+	async reloadExtensions(): Promise<void> {
+		this._logService.info(`[Copilot:${this.sessionId}] Reloading extensions`);
+		await this._wrapper.session.rpc.extensions.reload();
+		this._logService.info(`[Copilot:${this.sessionId}] Extensions reloaded`);
 	}
 
 	/**

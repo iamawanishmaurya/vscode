@@ -119,6 +119,8 @@ class MockCopilotSession {
 	readonly extensions: Awaited<ReturnType<CopilotSession['rpc']['extensions']['list']>>['extensions'] = [];
 	extensionListGate: Promise<void> | undefined;
 	onExtensionList: (() => void) | undefined;
+	extensionReloadCalls = 0;
+	extensionReloadError: Error | undefined;
 	readonly eventLogReadRequests: Parameters<CopilotSession['rpc']['eventLog']['read']>[0][] = [];
 	eventLogReadGate: Promise<void> | undefined;
 	readonly sendRequests: unknown[] = [];
@@ -394,6 +396,12 @@ class MockCopilotSession {
 				this.onExtensionList?.();
 				await this.extensionListGate;
 				return { extensions: this.extensions };
+			},
+			reload: async () => {
+				this.extensionReloadCalls++;
+				if (this.extensionReloadError) {
+					throw this.extensionReloadError;
+				}
 			},
 		},
 		canvas: {
@@ -2145,6 +2153,17 @@ suite('CopilotAgentSession', () => {
 		releaseList.complete();
 
 		const { session } = await creation;
+		session.dispose();
+	});
+
+	test('reloads extensions through the live SDK session', async () => {
+		const { session, runtime, mockSession } = await createAgentSession(disposables);
+
+		await runtime.reloadExtensions();
+		mockSession.extensionReloadError = new Error('reload failed');
+
+		await assert.rejects(() => runtime.reloadExtensions(), /reload failed/);
+		assert.strictEqual(mockSession.extensionReloadCalls, 2);
 		session.dispose();
 	});
 
